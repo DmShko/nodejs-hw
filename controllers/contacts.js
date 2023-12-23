@@ -17,7 +17,17 @@ const checkShemaStatus = Joi.object({
 
 const getAll = async (req, res) => {
     
-    const result = await Contact.find();
+    const { _id } = req.user; 
+
+    // for pagination
+    // const { page = 2, limit = 2 } = req.query;
+
+    // const skip = (page - 1) * limit;
+
+    // skip - how many elements skip, limit - how many return.
+    // const result = await Contact.find({owner: _id}, {skip, limit});
+    
+    const result = await Contact.find({owner: _id});
     res.status(200).json(result);
    
 };
@@ -59,9 +69,12 @@ const addContact = async (req, res) => {
       }
   
     //   const result = await contacts.addContact(body);
-      await Contact.create(body);
 
-      res.status(201).json(body);
+      const { _id } = req.user; 
+
+      const newContact = await Contact.create({...body, owner: _id});
+
+      res.status(201).json(newContact);
  
   };
 
