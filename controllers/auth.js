@@ -2,18 +2,19 @@ const Joi = require("joi");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const gravatar = require("gravatar");
+const nodemailer = require("nodemailer");
 const path = require("path");
-const nanoid = require("nanoid");
+const {nanoid} = require("nanoid");
 
 const { HttpError, ctrlWrapper, sendEmail } = require("../helpers");
 
-const { SECRET_KEY, BASE_URL } = process.env;
+const { SECRET_KEY, BASE_URL, GOOGLE_PASSWORD } = process.env;
 
 const User = require("../models/user");
 
 const checkRegister = Joi.object({
 
-    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
+    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\d{0}[0-9]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
     password: Joi.string().min(8).required(),
     subscription: Joi.string().valid("starter", "pro", "business"),
 
@@ -24,12 +25,12 @@ const checkShemaSubscription = Joi.object({
 });
 
 const emailShema = Joi.object({
-    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
+    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\d{0}[0-9]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
 });
 
 const checkLogin = Joi.object({
 
-    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
+    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\d{0}[0-9]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
     password: Joi.string().min(8).required(),
 
 });
@@ -62,15 +63,48 @@ const register = async (req, res) => {
     // verify code from email
     const verificationCode = nanoid();
   
-    const newUser = await User.create({...body, password: hashPassword, avatarURL}, verificationCode);
+    const newUser = await User.create({...body, password: hashPassword, avatarURL, verificationCode});
+
+    /***************for send grid**************** */
+    // const verifyEmail = {
+    //     to: email,
+    //     subject: "Verify email",
+    //     html: `<a target="_blank" href="${BASE_URL}/api/auth/verify/${verificationCode}">Click verify email</a>`,
+    // };
+
+    // await sendEmail(verifyEmail);
+
+    /*******************for nodemailer*********** */
+
+    // configuration
+    const nodemailerConfig = {
+        service: "Gmail",
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: {
+            user: 'dmitry.schevchenko.work@gmail.com',
+            pass: GOOGLE_PASSWORD,
+        },
+    };
+
+    // create transporter object
+    const transporter = nodemailer.createTransport(nodemailerConfig);
 
     const verifyEmail = {
         to: email,
+        from: 'dmitry.schevchenko.work@gmail.com',
         subject: "Verify email",
         html: `<a target="_blank" href="${BASE_URL}/api/auth/verify/${verificationCode}">Click verify email</a>`,
     };
 
-    await sendEmail(verifyEmail);
+    transporter.sendMail(verifyEmail).then(() => 
+        console.log('Email send successfuly')
+    )
+    .catch( error =>
+        console.log(error.message)
+    );
+    /*******************for nodemailer end*********** */
 
     res.status(201).json({
         user:{
@@ -101,7 +135,7 @@ const verifyEmail = async (req, res) => {
 const resendVerifyEmail = async (req, res) => {
     const { body } = req;
     const { email } = req.body;
-    const { error } = checkLogin.validate(body);
+    const { error } = emailShema.validate(body);
 
     // ather error message (from frontend)
     if (error) {
