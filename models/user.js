@@ -8,7 +8,7 @@ const userSchema = new Schema({
     
     email: {
         type: String,
-        match: /\w{0}[a-zA-Zа-яА-Я]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/,
+        match: /\w{0}[a-zA-Zа-яА-Я]+\d{0}[0-9]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/,
         unique: true,
         required: [true, 'Email is required'],
     },
@@ -25,6 +25,14 @@ const userSchema = new Schema({
     token:{ 
         type: String,
         default: ""
+    },
+    verify:{
+        type: Boolean,
+        default: false,
+    },
+    verificationCode:{
+        type: String,
+        default: "",
     },
     avatarURL: String,
 },{

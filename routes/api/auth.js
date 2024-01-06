@@ -12,6 +12,12 @@ router.post("/register", ctrl.register);
 // singIn
 router.post("/login", ctrl.login);
 
+// verificate
+router.get("/verify/:verificationCode", ctrl.verifyEmail);
+
+// verify againe if the letter did not arrive
+router.post("/verify", ctrl.resendVerifyEmail);
+
 // logOut
 router.post("/logout", authentificate, ctrl.logout);
 

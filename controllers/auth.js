@@ -2,17 +2,19 @@ const Joi = require("joi");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const gravatar = require("gravatar");
+const nodemailer = require("nodemailer");
 const path = require("path");
+const {nanoid} = require("nanoid");
 
-const { HttpError, ctrlWrapper } = require("../helpers");
+const { HttpError, ctrlWrapper, sendEmail } = require("../helpers");
 
-const { SECRET_KEY } = process.env;
+const { SECRET_KEY, BASE_URL, GOOGLE_PASSWORD } = process.env;
 
 const User = require("../models/user");
 
 const checkRegister = Joi.object({
 
-    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
+    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\d{0}[0-9]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
     password: Joi.string().min(8).required(),
     subscription: Joi.string().valid("starter", "pro", "business"),
 
@@ -22,9 +24,13 @@ const checkShemaSubscription = Joi.object({
     subscription: Joi.boolean().valid("starter", "pro", "business").required(),
 });
 
+const emailShema = Joi.object({
+    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\d{0}[0-9]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
+});
+
 const checkLogin = Joi.object({
 
-    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
+    email: Joi.string().pattern(/\w{0}[a-zA-Zа-яА-Я]+\d{0}[0-9]+\@\w{0}[a-zA-Zа-яА-Я]+\.\w{0}[a-zA-Zа-яА-Я]/).required(),
     password: Joi.string().min(8).required(),
 
 });
@@ -53,8 +59,52 @@ const register = async (req, res) => {
 
     // hash password
     const hashPassword = await bcrypt.hash(password, 10);
+
+    // verify code from email
+    const verificationCode = nanoid();
   
-    const newUser = await User.create({...body, password: hashPassword, avatarURL});
+    const newUser = await User.create({...body, password: hashPassword, avatarURL, verificationCode});
+
+    /***************for send grid**************** */
+    // const verifyEmail = {
+    //     to: email,
+    //     subject: "Verify email",
+    //     html: `<a target="_blank" href="${BASE_URL}/api/auth/verify/${verificationCode}">Click verify email</a>`,
+    // };
+
+    // await sendEmail(verifyEmail);
+
+    /*******************for nodemailer*********** */
+
+    // configuration
+    const nodemailerConfig = {
+        service: "Gmail",
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: {
+            user: 'dmitry.schevchenko.work@gmail.com',
+            pass: GOOGLE_PASSWORD,
+        },
+    };
+
+    // create transporter object
+    const transporter = nodemailer.createTransport(nodemailerConfig);
+
+    const verifyEmail = {
+        to: email,
+        from: 'dmitry.schevchenko.work@gmail.com',
+        subject: "Verify email",
+        html: `<a target="_blank" href="${BASE_URL}/api/auth/verify/${verificationCode}">Click verify email</a>`,
+    };
+
+    transporter.sendMail(verifyEmail).then(() => 
+        console.log('Email send successfuly')
+    )
+    .catch( error =>
+        console.log(error.message)
+    );
+    /*******************for nodemailer end*********** */
 
     res.status(201).json({
         user:{
@@ -63,6 +113,55 @@ const register = async (req, res) => {
         }
     });
    
+};
+
+const verifyEmail = async (req, res) => {
+
+    const { verificationCode } = req.params;
+    const user = await User.findOne({verificationCode});
+
+    // find user whith souch verication code
+    // if not found
+    if(!user) throw HttpError(401, "Email not found");
+
+    // if found, change verify true
+    await User.findByIdAndUpdate(user._id, {verify: true, verificationCode: ""});
+
+    res.json({
+        message: "Email verify success"
+    });
+};
+
+const resendVerifyEmail = async (req, res) => {
+    const { body } = req;
+    const { email } = req.body;
+    const { error } = emailShema.validate(body);
+
+    // ather error message (from frontend)
+    if (error) {
+        throw HttpError(
+            400,
+            'Joi validation error'
+        );
+    }
+
+    const user = await User.findOne({email});
+
+    if(!user) throw HttpError(401, "Email not found");
+
+    if(user.verify) throw HttpError(401, "User already verified");
+
+    const verifyEmail = {
+        to: email,
+        subject: "Verify email",
+        html: `<a target="_blank" href="${BASE_URL}/api/auth/verify/${user.verificationCode}">Click verify email</a>`,
+    };
+
+    await sendEmail(verifyEmail);
+
+    res.json({
+        message: "Email verify success"
+    });
 };
 
 const login = async (req, res) => {
@@ -78,10 +177,13 @@ const login = async (req, res) => {
             'Joi validation error'
         );
     }
-    // check email that user with sach email use (on DB resource)
+
+    // check email that user with sach email use (on DB resource) return user {...} if he exist.
     const user = await User.findOne({email});
 
     if(!user) throw HttpError(401, "Email or password wrong");
+
+    if(!user.verify) throw HttpError(401, "Email isn't verified");
 
     // check email that enter password invalid
     const passwordCompare = await bcrypt.compare(password, user.password);
@@ -161,4 +263,6 @@ module.exports = {
     logout: ctrlWrapper(logout),
     getCurrent: ctrlWrapper(getCurrent),
     updateSubscriptionUser: ctrlWrapper(updateSubscriptionUser),
+    verifyEmail: ctrlWrapper(verifyEmail),
+    resendVerifyEmail: ctrlWrapper(resendVerifyEmail),
 };
